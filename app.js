@@ -5,10 +5,13 @@
   const LS_KEY = 'dailystock.settings';
   const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
   const UNDO_MS = 8000;
+  const LIVE_MS = 60000;      // 交易時段內每分鐘更新即時報價
+  const QUOTE_BATCH = 60;     // 每次向騰訊查詢的股票數目
 
   const $ = (sel) => document.querySelector(sel);
   const state = {
-    stocks: [], log: [], prices: { stocks: {} },
+    stocks: [], log: [], prices: { stocks: {} }, names: {},
+    live: { ok: null, time: null }, liveBusy: false,
     selected: null, chartDays: 14, chart: null, polling: null,
     mgTab: 'list', mgSel: new Set(), logFilter: 'all',
   };
@@ -203,7 +206,9 @@
 
   // ---------- 價格資料 ----------
   const stockData = (sym) => state.prices.stocks?.[sym] || null;
-  const displayName = (s) => s.name || stockData(s.symbol)?.name || s.symbol;
+  const code5 = (sym) => shortCode(sym).padStart(5, '0');
+  const hkName = (sym) => state.names[code5(sym)] || '';
+  const displayName = (s) => s.name || hkName(s.symbol) || stockData(s.symbol)?.name || s.symbol;
   function priceOf(sym) {
     const d = stockData(sym);
     return d?.current ?? d?.history?.[d.history.length - 1]?.c ?? null;
@@ -220,6 +225,104 @@
       if (state.log[i].symbol === sym && state.log[i].a === 'add') return state.log[i];
     }
     return null;
+  }
+
+  // ---------- 即時報價（騰訊） ----------
+  const tcCode = (sym) => 'hk' + code5(sym);
+
+  // 港股交易時段：週一至五 09:00–12:00、13:00–16:10（含收市競價）
+  function marketOpen(date = new Date()) {
+    const p = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Hong_Kong', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date).reduce((a, x) => (a[x.type] = x.value, a), {});
+    if (p.weekday === 'Sat' || p.weekday === 'Sun') return false;
+    const m = Number(p.hour) * 60 + Number(p.minute);
+    return (m >= 540 && m < 720) || (m >= 780 && m <= 970);
+  }
+
+  // 把一個報價放入該股票的歷史：同日則取代，較新則加在最後
+  function mergeQuote(sym, d, h, l, c) {
+    const all = (state.prices.stocks ||= {});
+    const st = (all[sym] ||= { name: '', current: null, history: [] });
+    const hist = st.history;
+    const lastRow = hist[hist.length - 1];
+    const row = { d, h, l, c };
+    if (lastRow && lastRow.d === d) hist[hist.length - 1] = row;
+    else if (!lastRow || lastRow.d < d) hist.push(row);
+    else return;
+    st.current = c;
+  }
+
+  async function fetchLiveQuotes() {
+    const syms = state.stocks.map((s) => s.symbol);
+    if (!syms.length) return;
+    const batches = [];
+    for (let i = 0; i < syms.length; i += QUOTE_BATCH) batches.push(syms.slice(i, i + QUOTE_BATCH));
+    try {
+      const texts = await Promise.all(batches.map(async (b) => {
+        const res = await fetch(`https://qt.gtimg.cn/q=${b.map(tcCode).join(',')}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(res.status);
+        return new TextDecoder('gbk').decode(await res.arrayBuffer());
+      }));
+      let newest = null;
+      let n = 0;
+      texts.join('\n').split(';').forEach((line) => {
+        const m = line.match(/v_hk(\d+)="([^"]*)"/);
+        if (!m) return;
+        const f = m[2].split('~');
+        if (f.length < 35) return;
+        const sym = normalizeSymbol(m[1]);
+        const last = Number(f[3]);
+        const h = Number(f[33]);
+        const l = Number(f[34]);
+        const t = f[30]; // 例如 2026/11/23 16:08:28
+        if (!sym || !(last > 0) || !/^\d{4}\/\d{2}\/\d{2}/.test(t)) return;
+        mergeQuote(sym, t.slice(0, 10).replace(/\//g, '-'), h > 0 ? h : last, l > 0 ? l : last, last);
+        if (!newest || t > newest) newest = t;
+        n += 1;
+      });
+      state.live = { ok: n > 0, time: newest || state.live.time };
+    } catch (e) {
+      console.warn('即時報價失敗', e);
+      state.live = { ok: false, time: state.live.time };
+    }
+  }
+
+  // 為未有資料的股票即時下載最近 100 日歷史（新加入的股票不用等網站更新）
+  async function fetchHistory(symbols) {
+    const all = (state.prices.stocks ||= {});
+    await Promise.all(symbols.map(async (sym) => {
+      try {
+        const tc = tcCode(sym);
+        const res = await fetch(`https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param=${tc},day,,,100`, { cache: 'no-store' });
+        const rows = (await res.json())?.data?.[tc]?.day || [];
+        const history = rows
+          .map((r) => ({ d: r[0], h: Number(r[3]), l: Number(r[4]), c: Number(r[2]) }))
+          .filter((r) => r.h > 0 && r.l > 0 && r.c > 0);
+        if (history.length && !all[sym]?.history?.length) {
+          all[sym] = { name: hkName(sym), current: history[history.length - 1].c, history };
+        }
+      } catch (e) {
+        console.warn('歷史資料下載失敗', sym, e);
+      }
+    }));
+  }
+  const missingData = (symbols) => symbols.filter((sym) => !stockData(sym)?.history?.length);
+
+  async function refreshLive() {
+    if (state.liveBusy) return;
+    state.liveBusy = true;
+    try {
+      const missing = missingData(state.stocks.map((s) => s.symbol));
+      if (missing.length) await fetchHistory(missing);
+      await fetchLiveQuotes();
+    } finally {
+      state.liveBusy = false;
+    }
+    renderUpdated();
+    renderTable();
+    renderManage();
+    if ($('#dlg-chart').open) renderChart();
   }
 
   // ---------- 表格 ----------
@@ -303,10 +406,20 @@
   }
 
   function renderUpdated() {
-    const t = state.prices.updated_at;
-    $('#updated').textContent = t
-      ? `更新：${fmtDateTime(t)}（香港時間）· 共 ${state.stocks.length} 隻`
-      : '尚未有資料';
+    const count = `共 ${state.stocks.length} 隻`;
+    const { ok, time } = state.live;
+    let text;
+    if (ok && time) {
+      const [, mo, d, hms] = time.match(/^\d{4}\/(\d{2})\/(\d{2}) (\S+)/) || [];
+      text = `即時：${Number(mo)}月${Number(d)}日 ${hms}${marketOpen() ? ' · 每分鐘更新' : ' · 已收市'}`;
+    } else if (ok === false) {
+      const t = state.prices.updated_at;
+      text = `即時報價暫停${t ? `，顯示 ${fmtDateTime(t)} 資料` : ''}`;
+    } else {
+      const t = state.prices.updated_at;
+      text = t ? `更新：${fmtDateTime(t)}` : '載入中…';
+    }
+    $('#updated').textContent = `${text} · ${count}`;
   }
 
   function renderJumpList() {
@@ -464,6 +577,9 @@
 
   // items: [{symbol, name}]
   async function addStocks(items) {
+    // 先下載新股票的資料，令變動紀錄有加入時的價格
+    const missing = missingData(items.map((i) => i.symbol));
+    if (missing.length) await fetchHistory(missing);
     const res = await commitWatchlist((doc) => {
       const have = new Set(doc.stocks.map((s) => s.symbol));
       const added = [];
@@ -471,7 +587,7 @@
       items.forEach((it) => {
         if (have.has(it.symbol)) { dup.push(shortCode(it.symbol)); return; }
         have.add(it.symbol);
-        const s = { symbol: it.symbol, name: (it.name || '').trim() };
+        const s = { symbol: it.symbol, name: (it.name || '').trim() || hkName(it.symbol) };
         doc.stocks.push(s);
         doc.log.push(logEntry('add', s));
         added.push(s);
@@ -479,10 +595,7 @@
       return { changed: added.length > 0, added, dup };
     }, items.length === 1 ? `新增 ${items[0].symbol}` : `新增 ${items.length} 隻股票`);
 
-    if (res.added.length) {
-      const missing = res.added.map((s) => s.symbol).filter((sym) => !stockData(sym)?.history?.length);
-      if (missing.length) pollFor(missing);
-    }
+    if (res.added.length) refreshLive();
     return res;
   }
 
@@ -540,30 +653,6 @@
     notice('新增／移除股票需要 GitHub 權杖，請先在「設定」中輸入。');
     document.querySelectorAll('dialog[open]').forEach((d) => d.close());
     $('#btn-settings').click();
-  }
-
-  function pollFor(symbols) {
-    clearInterval(state.polling);
-    let tries = 0;
-    notice(`正在下載新股票資料及更新網站（約 2 分鐘）…`);
-    state.polling = setInterval(async () => {
-      tries += 1;
-      try {
-        state.prices = await fetchStatic('data/prices.json');
-        if (symbols.every((s) => stockData(s)?.history?.length)) {
-          clearInterval(state.polling);
-          notice('');
-          toast('新股票資料已更新');
-          renderAll();
-          return;
-        }
-      } catch (e) { /* 下次再試 */ }
-      if (tries >= 15) {
-        clearInterval(state.polling);
-        renderAll();
-        notice('部分資料尚未出現，請稍後重新整理頁面。');
-      }
-    }, 20000);
   }
 
   // ---------- 管理股票畫面 ----------
@@ -714,8 +803,13 @@
     });
     const preview = () => {
       const { items, invalid } = parseAddInput(qaText());
-      if (invalid.length) qaMsg(`無法辨認：${invalid.join('、')}`, true);
-      else qaMsg(items.length ? `將會加入 ${items.length} 隻：${items.slice(0, 10).map((i) => shortCode(i.symbol) + (i.name ? ' ' + i.name : '')).join('、')}${items.length > 10 ? '…' : ''}` : '');
+      if (invalid.length) { qaMsg(`無法辨認：${invalid.join('、')}`, true); return; }
+      if (!items.length) { qaMsg(''); return; }
+      const haveNames = Object.keys(state.names).length > 0;
+      const unknown = haveNames ? items.filter((i) => !hkName(i.symbol)).map((i) => shortCode(i.symbol)) : [];
+      const shown = items.slice(0, 10).map((i) => `${shortCode(i.symbol)} ${i.name || hkName(i.symbol)}`.trim()).join('、');
+      qaMsg(`將會加入 ${items.length} 隻：${shown}${items.length > 10 ? '…' : ''}`
+        + (unknown.length ? `\n港交所名單找不到：${unknown.join('、')}（請檢查代號）` : ''), unknown.length > 0);
     };
     $('#qa-input').addEventListener('input', preview);
     $('#qa-bulk').addEventListener('input', preview);
@@ -807,20 +901,32 @@
     });
 
     window.addEventListener('resize', syncHeaderHeight);
+
+    // 交易時段內每分鐘更新；iPad 由休眠／其他分頁返回時立即更新
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && marketOpen()) refreshLive();
+    }, LIVE_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshLive();
+    });
   }
 
   async function load() {
     try {
-      const [stocksJson, prices] = await Promise.all([
+      const [stocksJson, prices, names] = await Promise.all([
         loadStocksJson(),
         fetchStatic('data/prices.json').catch(() => ({ stocks: {} })),
+        fetchStatic('data/names.json').catch(() => ({})),
       ]);
       state.prices = prices;
+      state.names = names;
       applyDoc(stocksJson);
     } catch (e) {
       notice(`載入資料失敗：${e.message}`);
       renderAll();
     }
+
+    refreshLive();
 
     const hash = decodeURIComponent(location.hash.slice(1));
     if (hash === 'manage' || hash === 'log') { openManage(hash === 'log' ? 'log' : 'list'); return; }
