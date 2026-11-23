@@ -1,3 +1,6 @@
 __pycache__/
 .venv/
 .DS_Store
+_site/
+# 股價資料由 GitHub Actions 產生並直接發佈，不存入 git
+data/prices.json

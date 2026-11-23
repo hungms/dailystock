@@ -2,55 +2,56 @@
 <html lang="zh-Hant-HK">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>港股每日紀錄</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <div>
+  <header class="top" id="top">
+    <div class="title">
       <h1>港股每日紀錄</h1>
-      <p class="meta" id="updated">載入中…</p>
+      <span class="meta" id="updated">載入中…</span>
     </div>
     <div class="actions">
-      <button id="btn-add" class="primary">＋ 新增股票</button>
+      <form id="form-jump" class="jump" autocomplete="off">
+        <input id="jump" list="jump-list" placeholder="搜尋代號或名稱" enterkeyhint="go">
+        <datalist id="jump-list"></datalist>
+      </form>
+      <button id="btn-add" class="primary">＋ 新增</button>
       <button id="btn-settings">設定</button>
     </div>
   </header>
 
-  <main>
-    <p class="notice" id="notice" hidden></p>
-    <div class="table-wrap">
-      <table id="grid">
-        <thead></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="hint">點擊股票名稱可查看走勢圖。「現價」欄：今日為最新價，過往日子為收市價。波幅 ＝ 最高 − 最低（括號為佔最低價百分比）。</p>
+  <p class="notice" id="notice" hidden></p>
 
-    <section id="chart-panel" hidden>
-      <div class="chart-head">
-        <h2 id="chart-title"></h2>
-        <div class="seg" id="chart-range">
-          <button data-days="14" class="on">14日</button>
-          <button data-days="30">30日</button>
-          <button data-days="90">90日</button>
-        </div>
-        <button id="chart-close" class="ghost" aria-label="關閉">✕</button>
-      </div>
-      <div class="chart-box"><canvas id="chart"></canvas></div>
-    </section>
+  <main class="table-wrap" id="wrap">
+    <table id="grid">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
   </main>
+
+  <dialog id="dlg-chart" class="full">
+    <div class="chart-head">
+      <h2 id="chart-title"></h2>
+      <div class="seg" id="chart-range">
+        <button data-days="14" class="on">14日</button>
+        <button data-days="30">30日</button>
+        <button data-days="90">90日</button>
+      </div>
+      <button id="chart-close" class="close" aria-label="關閉">✕</button>
+    </div>
+    <div class="chart-box"><canvas id="chart"></canvas></div>
+  </dialog>
 
   <dialog id="dlg-add">
     <form method="dialog" id="form-add">
       <h3>新增股票</h3>
-      <label>股票代號
-        <input id="add-symbol" placeholder="例如 700、0700 或 0700.HK" required autocomplete="off">
+      <label>股票代號（可一次輸入多隻）
+        <textarea id="add-input" rows="6" placeholder="例如：&#10;700, 9988, 5&#10;1810 小米集團&#10;0388.HK 香港交易所"></textarea>
       </label>
-      <label>名稱（可選）
-        <input id="add-name" placeholder="例如 騰訊控股" autocomplete="off">
-      </label>
+      <p class="small">以逗號、空格或換行分隔；每行可在代號後加上名稱。</p>
       <p class="small" id="add-msg"></p>
       <div class="dlg-actions">
         <button value="cancel" formnovalidate>取消</button>
@@ -62,18 +63,18 @@
   <dialog id="dlg-settings">
     <form method="dialog" id="form-settings">
       <h3>設定</h3>
-      <p class="small">新增／移除股票會直接修改 GitHub 儲存庫內的 <code>stocks.json</code>，需要一個 GitHub 存取權杖（Fine-grained token，只授權此儲存庫的 Contents 及 Actions 讀寫）。權杖只會儲存在此瀏覽器，不會上傳到儲存庫。</p>
+      <p class="small">新增／移除股票會直接修改 GitHub 儲存庫內的 <code>stocks.json</code>，需要一個 GitHub 存取權杖（Fine-grained token，只授權此儲存庫的 Contents 讀寫）。權杖只會儲存在此瀏覽器，不會上傳到儲存庫。</p>
       <label>儲存庫（擁有者/名稱）
-        <input id="set-repo" placeholder="例如 yourname/dailystock" autocomplete="off">
+        <input id="set-repo" placeholder="例如 yourname/dailystock" autocomplete="off" autocapitalize="off">
       </label>
       <label>分支
-        <input id="set-branch" placeholder="main" autocomplete="off">
+        <input id="set-branch" placeholder="main" autocomplete="off" autocapitalize="off">
       </label>
       <label>GitHub 權杖
         <input id="set-token" type="password" placeholder="github_pat_…" autocomplete="off">
       </label>
       <div class="dlg-actions">
-        <button value="clear" id="set-clear" formnovalidate>清除權杖</button>
+        <button value="clear" formnovalidate>清除權杖</button>
         <button value="cancel" formnovalidate>取消</button>
         <button value="ok" class="primary">儲存</button>
       </div>
