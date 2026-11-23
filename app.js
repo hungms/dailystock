@@ -94,6 +94,8 @@
     if (!res.ok) {
       let msg = `${res.status}`;
       try { msg += ' ' + (await res.json()).message; } catch (e) { /* 忽略 */ }
+      if (res.status === 401) msg = '權杖無效或已過期，請在「設定」更新';
+      else if (res.status === 403 || res.status === 404) msg = `權杖沒有此儲存庫的寫入權限，或儲存庫名稱有誤（${res.status}）`;
       const err = new Error(msg);
       err.status = res.status;
       throw err;
@@ -118,10 +120,15 @@
     return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
   }
 
+  // GitHub API 的回應會被瀏覽器快取 60 秒；必須禁止快取，否則儲存時會用到舊版本而出現 409 錯誤
   async function readRemote() {
-    const meta = await (await gh(`/contents/stocks.json?ref=${encodeURIComponent(settings.branch)}`)).json();
+    const res = await gh(`/contents/stocks.json?ref=${encodeURIComponent(settings.branch)}&t=${Date.now()}`, { cache: 'no-store' });
+    const meta = await res.json();
     return { sha: meta.sha, doc: JSON.parse(utf8b64(meta.content)) };
   }
+
+  // 記住自己最後一次寫入的版本，下一次儲存直接以此為基礎（GitHub 剛寫入後讀取可能仍是舊版本）
+  let lastWrite = null;
 
   // 有權杖時直接從儲存庫讀取最新的 stocks.json（避免網站發佈延遲）
   async function loadStocksJson() {
@@ -139,11 +146,16 @@
     return p;
   }
 
-  // 讀取儲存庫最新內容 → mutate(doc) 修改列表並回傳紀錄 → 一次提交（列表及紀錄同步）
+  const RETRY_WAIT_MS = [500, 1000, 2000, 3000];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const isConflict = (e) => e.status === 409 || e.status === 422;
+
+  // 取得最新內容 → mutate(doc) 修改列表並回傳紀錄 → 一次提交（列表及紀錄同步）
+  // 版本衝突時等候再重新讀取，把同一修改套用到最新列表上（保留其他裝置的修改）
   function commitWatchlist(mutate, message) {
     return enqueue(async () => {
       for (let attempt = 0; ; attempt++) {
-        const { sha, doc } = await readRemote();
+        const { sha, doc } = attempt === 0 && lastWrite ? lastWrite : await readRemote();
         const next = { stocks: [...(doc.stocks || [])], log: [...(doc.log || [])] };
         const result = mutate(next);
         if (!result.changed) {
@@ -151,7 +163,7 @@
           return result;
         }
         try {
-          await gh('/contents/stocks.json', {
+          const res = await gh('/contents/stocks.json', {
             method: 'PUT',
             body: JSON.stringify({
               message,
@@ -160,10 +172,20 @@
               branch: settings.branch,
             }),
           });
+          const saved = await res.json().catch(() => ({}));
+          lastWrite = saved?.content?.sha ? { sha: saved.content.sha, doc: next } : null;
           applyDoc(next);
           return result;
         } catch (e) {
-          if ((e.status === 409 || e.status === 422) && attempt < 2) continue; // 版本衝突，重新讀取再試
+          lastWrite = null;
+          if (isConflict(e) && attempt < RETRY_WAIT_MS.length) {
+            await sleep(RETRY_WAIT_MS[attempt]);
+            continue;
+          }
+          if (isConflict(e)) {
+            readRemote().then((r) => applyDoc(r.doc)).catch(() => {}); // 令畫面與已儲存的內容一致
+            throw new Error('GitHub 版本衝突，請稍後再試');
+          }
           throw e;
         }
       }
@@ -912,6 +934,7 @@
   }
 
   async function load() {
+    lastWrite = null;
     try {
       const [stocksJson, prices, names] = await Promise.all([
         loadStocksJson(),
