@@ -44,7 +44,14 @@ jobs:
       - name: 準備網站檔案
         run: |
           mkdir -p _site/data
-          cp index.html style.css app.js stocks.json _site/
+          V="${GITHUB_SHA::7}"
+          # 每次發佈都使用新網址載入 app.js / style.css，避免瀏覽器沿用舊版本
+          sed -e "s#\"app.js\"#\"app.js?v=$V\"#" \
+              -e "s#\"style.css\"#\"style.css?v=$V\"#" \
+              -e "s#name=\"app-version\" content=\"dev\"#name=\"app-version\" content=\"$V\"#" \
+              index.html > _site/index.html
+          grep -q "app.js?v=$V" _site/index.html
+          cp style.css app.js stocks.json _site/
           cp data/prices.json data/names.json _site/data/
 
       - uses: actions/upload-pages-artifact@v3

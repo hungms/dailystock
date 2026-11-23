@@ -92,8 +92,18 @@
       },
     });
     if (!res.ok) {
-      let msg = `${res.status}`;
-      try { msg += ' ' + (await res.json()).message; } catch (e) { /* 忽略 */ }
+      let apiMsg = '';
+      try { apiMsg = (await res.json()).message || ''; } catch (e) { /* 忽略 */ }
+      let msg = `${res.status} ${apiMsg}`;
+      const retryAfter = Number(res.headers.get('retry-after')) || 0;
+      const limited = res.status === 429 || (res.status === 403
+        && (/rate limit/i.test(apiMsg) || retryAfter > 0 || res.headers.get('x-ratelimit-remaining') === '0'));
+      if (limited) {
+        const err = new Error('操作太頻繁，GitHub 暫時限制，請稍候再試');
+        err.status = 'rate';
+        err.retryAfter = retryAfter;
+        throw err;
+      }
       if (res.status === 401) msg = '權杖無效或已過期，請在「設定」更新';
       else if (res.status === 403 || res.status === 404) msg = `權杖沒有此儲存庫的寫入權限，或儲存庫名稱有誤（${res.status}）`;
       const err = new Error(msg);
@@ -146,9 +156,10 @@
     return p;
   }
 
-  const RETRY_WAIT_MS = [500, 1000, 2000, 3000];
+  const RETRY_WAIT_MS = [500, 1000, 2000, 3000, 5000, 8000];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const isConflict = (e) => e.status === 409 || e.status === 422;
+  const isRetryable = (e) => isConflict(e) || e.status === 'rate';
 
   // 取得最新內容 → mutate(doc) 修改列表並回傳紀錄 → 一次提交（列表及紀錄同步）
   // 版本衝突時等候再重新讀取，把同一修改套用到最新列表上（保留其他裝置的修改）
@@ -158,6 +169,7 @@
         const { sha, doc } = attempt === 0 && lastWrite ? lastWrite : await readRemote();
         const next = { stocks: [...(doc.stocks || [])], log: [...(doc.log || [])] };
         const result = mutate(next);
+        next.stocks.sort(byCode);
         if (!result.changed) {
           applyDoc(next);
           return result;
@@ -178,8 +190,10 @@
           return result;
         } catch (e) {
           lastWrite = null;
-          if (isConflict(e) && attempt < RETRY_WAIT_MS.length) {
-            await sleep(RETRY_WAIT_MS[attempt]);
+          if (isRetryable(e) && attempt < RETRY_WAIT_MS.length) {
+            const wait = Math.max(RETRY_WAIT_MS[attempt], Math.min((e.retryAfter || 0) * 1000, 10000));
+            toast(`儲存中…（重試 ${attempt + 1}）`);
+            await sleep(wait);
             continue;
           }
           if (isConflict(e)) {
@@ -193,7 +207,7 @@
   }
 
   function applyDoc(doc) {
-    state.stocks = doc.stocks || [];
+    state.stocks = [...(doc.stocks || [])].sort(byCode);
     state.log = doc.log || [];
     const live = new Set(state.stocks.map((s) => s.symbol));
     state.mgSel.forEach((s) => { if (!live.has(s)) state.mgSel.delete(s); });
@@ -230,7 +244,15 @@
   const stockData = (sym) => state.prices.stocks?.[sym] || null;
   const code5 = (sym) => shortCode(sym).padStart(5, '0');
   const hkName = (sym) => state.names[code5(sym)] || '';
-  const displayName = (s) => s.name || hkName(s.symbol) || stockData(s.symbol)?.name || s.symbol;
+  // 名稱優先使用中文：任何含中文的名稱 → 港交所名稱 → 其他名稱 → 代號
+  const hasCJK = (t) => /[\u3400-\u9fff]/.test(t || '');
+  function chineseFirst(sym, ...candidates) {
+    const all = [...candidates, hkName(sym), stockData(sym)?.name].filter(Boolean);
+    return all.find(hasCJK) || all[0] || sym;
+  }
+  const displayName = (s) => chineseFirst(s.symbol, s.name);
+  // 依股票代號數字排序
+  const byCode = (a, b) => Number(shortCode(a.symbol)) - Number(shortCode(b.symbol));
   function priceOf(sym) {
     const d = stockData(sym);
     return d?.current ?? d?.history?.[d.history.length - 1]?.c ?? null;
@@ -343,8 +365,17 @@
     }
     renderUpdated();
     renderTable();
-    renderManage();
+    updateManagePrices();
     if ($('#dlg-chart').open) renderChart();
+  }
+
+  // 只更新管理列表內的價格，不重建各行（避免點擊「移除」時剛好被重繪而失效）
+  function updateManagePrices() {
+    if (!$('#dlg-manage').open) return;
+    document.querySelectorAll('#mg-list .mg-row[data-sym]').forEach((row) => {
+      const cell = row.querySelector('.num');
+      if (cell) cell.textContent = fmt(priceOf(row.dataset.sym));
+    });
   }
 
   // ---------- 表格 ----------
@@ -363,6 +394,7 @@
 
     if (!stocks.length) {
       thead.innerHTML = '';
+      delete thead.dataset.key;
       tbody.innerHTML = '<tr><td class="blank">尚未加入任何股票，請按「＋ 新增」。</td></tr>';
       return;
     }
@@ -373,6 +405,9 @@
     const dates = [...dateSet].sort().reverse().slice(0, TABLE_DAYS);
 
     const rm = (sym) => (canEdit() ? `<button class="remove" data-remove="${sym}" aria-label="移除">✕</button>` : '');
+    // 表頭只在欄位改變時重建（每分鐘更新報價時不會打斷點擊）
+    const headKey = JSON.stringify([canEdit(), stocks.map((s) => [s.symbol, displayName(s)])]);
+    const rebuildHead = thead.dataset.key !== headKey;
     let h1 = '<tr class="r1"><th class="date-col" rowspan="2">日期</th>';
     let h2 = '<tr class="r2">';
     stocks.forEach((s) => {
@@ -381,7 +416,10 @@
         <span class="code">${shortCode(s.symbol)}</span>${rm(s.symbol)}</span></th>`;
       h2 += '<th class="g">最高</th><th>最低</th><th>波幅</th><th>現價</th>';
     });
-    thead.innerHTML = h1 + '</tr>' + h2 + '</tr>';
+    if (rebuildHead) {
+      thead.innerHTML = h1 + '</tr>' + h2 + '</tr>';
+      thead.dataset.key = headKey;
+    }
 
     const lookups = stocks.map((s) => {
       const d = stockData(s.symbol);
@@ -593,7 +631,7 @@
     t: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
     a,
     symbol: s.symbol,
-    name: s.name || stockData(s.symbol)?.name || '',
+    name: chineseFirst(s.symbol, s.name),
     price: priceOf(s.symbol),
   });
 
@@ -609,7 +647,8 @@
       items.forEach((it) => {
         if (have.has(it.symbol)) { dup.push(shortCode(it.symbol)); return; }
         have.add(it.symbol);
-        const s = { symbol: it.symbol, name: (it.name || '').trim() || hkName(it.symbol) };
+        const typed = (it.name || '').trim();
+        const s = { symbol: it.symbol, name: hasCJK(typed) ? typed : (hkName(it.symbol) || typed) };
         doc.stocks.push(s);
         doc.log.push(logEntry('add', s));
         added.push(s);
@@ -752,7 +791,7 @@
         <span class="when">${fmtLogTime(e.t)}</span>
         <span class="badge badge-${e.a}">${e.a === 'add' ? '新增' : '移除'}</span>
         <span class="code">${shortCode(e.symbol)}</span>
-        <span class="nm">${escapeHtml(e.name || e.symbol)}</span>
+        <span class="nm">${escapeHtml(chineseFirst(e.symbol, e.name))}</span>
         <span class="num hide-narrow">${fmt(ref)}<span class="sub2">當時價格</span></span>
         ${tail}
         <span class="hide-narrow"></span>
@@ -899,6 +938,8 @@
 
     // 設定
     const dlgSet = $('#dlg-settings');
+    const ver = document.querySelector('meta[name="app-version"]')?.content || 'dev';
+    $('#app-version').textContent = `網站版本：${ver}`;
     $('#btn-settings').addEventListener('click', () => {
       $('#set-repo').value = settings.repo;
       $('#set-branch').value = settings.branch;

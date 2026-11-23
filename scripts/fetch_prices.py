@@ -68,6 +68,10 @@ def load_hkex_names():
     return names
 
 
+def has_cjk(text):
+    return any("\u3400" <= ch <= "\u9fff" for ch in text or "")
+
+
 def frame_for(df, sym):
     if isinstance(df.columns, pd.MultiIndex):
         if sym not in df.columns.get_level_values(0):
@@ -127,7 +131,9 @@ def main():
                 out[sym] = prev
             continue
         hkex = names.get(sym.replace(".HK", "").zfill(5))
-        name = s.get("name") or hkex or prev.get("name") or lookup_name(sym)
+        # 名稱優先使用中文
+        cands = [n for n in (s.get("name"), hkex, prev.get("name")) if n]
+        name = next((n for n in cands if has_cjk(n)), None) or (cands[0] if cands else lookup_name(sym))
         out[sym] = {"name": name, "current": rows[-1]["c"], "history": rows}
 
     print(f"完成 {len(out)}/{len(stocks)} 隻")
