@@ -306,3 +306,37 @@ button.danger:disabled { color: var(--muted); border-color: var(--line); }
   #log-list .mg-row { grid-template-columns: 150px 70px 76px minmax(0, 1fr) 120px; }
   #log-list .mg-row .hide-narrow { display: none; }
 }
+
+/* ---------- 「＋ 新增」小型輸入框 ---------- */
+dialog.quick { width: min(520px, calc(100vw - 32px)); }
+#qk-input { display: block; width: 100%; font-size: 26px; min-height: 56px; }
+#qk-msg { min-height: 1.3em; white-space: pre-line; margin-top: 10px; }
+#qk-msg.err { color: var(--up); }
+
+/* ---------- 列印 ---------- */
+#print-area { display: none; }
+
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  html, body { height: auto; overflow: visible; display: block; background: #fff; }
+  body { font-size: 11px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .top, .notice, .table-wrap, dialog, .toast { display: none !important; }
+  #print-area { display: block; }
+  .print-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 6px; }
+  .print-head h1 { font-size: 18px; }
+  .print-head p { margin: 0; color: var(--muted); }
+  .print-block {
+    width: 100%;
+    font-size: 10.5px;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid var(--line);
+  }
+  .print-block th, .print-block td { padding: 1px 4px; background: #fff; position: static; line-height: 1.2; }
+  .print-block thead th { font-size: 10.5px; color: var(--fg); background: var(--head); }
+  .print-block thead tr:first-child th { text-align: center; font-size: 11.5px; }
+  .print-block .date-col { font-weight: 600; padding-left: 4px; }
+  .print-block .code { font-size: 9.5px; }
+  .print-block .sub { display: inline; font-size: 9px; margin-left: 3px; }
+}

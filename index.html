@@ -21,6 +21,7 @@
       </form>
       <button id="btn-add" class="primary">＋ 新增</button>
       <button id="btn-manage">管理／紀錄</button>
+      <button id="btn-print">列印</button>
       <button id="btn-settings">設定</button>
     </div>
   </header>
@@ -45,6 +46,18 @@
       <button id="chart-close" class="close" aria-label="關閉">✕</button>
     </div>
     <div class="chart-box"><canvas id="chart"></canvas></div>
+  </dialog>
+
+  <dialog id="dlg-quick" class="quick">
+    <form id="form-quick" autocomplete="off">
+      <h3>新增股票</h3>
+      <input id="qk-input" placeholder="輸入代號，例如 700 或 1810" enterkeyhint="done" inputmode="text">
+      <p class="small" id="qk-msg"></p>
+      <div class="dlg-actions">
+        <button type="button" id="qk-cancel">取消</button>
+        <button type="submit" class="primary" id="qk-ok">加入</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="dlg-manage" class="full">
@@ -114,6 +127,8 @@
       </div>
     </form>
   </dialog>
+
+  <div id="print-area"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="app.js"></script>

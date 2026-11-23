@@ -387,6 +387,39 @@
     if (r1) document.documentElement.style.setProperty('--h1', `${r1.getBoundingClientRect().height}px`);
   }
 
+  // 所有股票的交易日合併，取最近 14 日，新到舊
+  function tableDates(stocks) {
+    const dateSet = new Set();
+    stocks.forEach((s) => (stockData(s.symbol)?.history || []).forEach((r) => dateSet.add(r.d)));
+    return [...dateSet].sort().reverse().slice(0, TABLE_DAYS);
+  }
+
+  function makeLookup(s) {
+    const d = stockData(s.symbol);
+    const hist = d?.history || [];
+    const map = new Map();
+    hist.forEach((r, i) => map.set(r.d, { r, prev: hist[i - 1] || null, last: i === hist.length - 1 }));
+    return { map, current: d?.current };
+  }
+
+  // 一隻股票某一日的四格：最高、最低、波幅、現價（與前一交易日比較：紅升藍跌）
+  function cellsHtml({ map, current }, date, alt) {
+    const hit = map.get(date);
+    if (!hit) return `<td class="g empty ${alt}" colspan="4">${map.size ? '—' : '等待資料更新…'}</td>`;
+    const { r, prev, last } = hit;
+    const dg = r.l < 10 ? 3 : 2;
+    const price = last && current != null ? current : r.c;
+    const range = r.h - r.l;
+    const pct = r.l ? (range / r.l) * 100 : null;
+    const pRange = prev ? prev.h - prev.l : null;
+    const chgPct = prev?.c ? ((price - prev.c) / prev.c) * 100 : null;
+    return `<td class="g ${alt} ${dirClass(r.h, prev?.h)}">${fmt(r.h, dg)}</td>`
+      + `<td class="${alt} ${dirClass(r.l, prev?.l)}">${fmt(r.l, dg)}</td>`
+      + `<td class="${alt} ${dirClass(range, pRange)}">${fmt(range, dg)}<span class="sub">${fmt(pct, 2)}%</span></td>`
+      + `<td class="${alt} ${dirClass(price, prev?.c)}">${fmt(price, dg)}`
+      + `<span class="sub">${chgPct == null ? '&nbsp;' : signed(chgPct, 2) + '%'}</span></td>`;
+  }
+
   function renderTable() {
     const thead = $('#grid thead');
     const tbody = $('#grid tbody');
@@ -399,10 +432,7 @@
       return;
     }
 
-    // 所有股票的交易日合併，取最近 14 日，新到舊
-    const dateSet = new Set();
-    stocks.forEach((s) => (stockData(s.symbol)?.history || []).forEach((r) => dateSet.add(r.d)));
-    const dates = [...dateSet].sort().reverse().slice(0, TABLE_DAYS);
+    const dates = tableDates(stocks);
 
     const rm = (sym) => (canEdit() ? `<button class="remove" data-remove="${sym}" aria-label="移除">✕</button>` : '');
     // 表頭只在欄位改變時重建（每分鐘更新報價時不會打斷點擊）
@@ -421,13 +451,7 @@
       thead.dataset.key = headKey;
     }
 
-    const lookups = stocks.map((s) => {
-      const d = stockData(s.symbol);
-      const hist = d?.history || [];
-      const map = new Map();
-      hist.forEach((r, i) => map.set(r.d, { r, prev: hist[i - 1] || null, last: i === hist.length - 1 }));
-      return { map, current: d?.current };
-    });
+    const lookups = stocks.map(makeLookup);
 
     if (!dates.length) {
       tbody.innerHTML = `<tr><td class="date-col">—</td>${stocks.map(() =>
@@ -438,31 +462,36 @@
 
     tbody.innerHTML = dates.map((date, idx) => {
       let row = `<tr${idx === 0 ? ' class="today"' : ''}><td class="date-col">${fmtDateShort(date)}</td>`;
-      lookups.forEach(({ map, current }, i) => {
-        const alt = i % 2 ? 'alt' : '';
-        const hit = map.get(date);
-        if (!hit) {
-          row += `<td class="g empty ${alt}" colspan="4">${map.size ? '—' : '等待資料更新…'}</td>`;
-          return;
-        }
-        const { r, prev, last } = hit;
-        const dg = r.l < 10 ? 3 : 2;
-        const price = last && current != null ? current : r.c;
-        const range = r.h - r.l;
-        const pct = r.l ? (range / r.l) * 100 : null;
-        const pRange = prev ? prev.h - prev.l : null;
-        const chgPct = prev?.c ? ((price - prev.c) / prev.c) * 100 : null;
-
-        row += `<td class="g ${alt} ${dirClass(r.h, prev?.h)}">${fmt(r.h, dg)}</td>`
-          + `<td class="${alt} ${dirClass(r.l, prev?.l)}">${fmt(r.l, dg)}</td>`
-          + `<td class="${alt} ${dirClass(range, pRange)}">${fmt(range, dg)}<span class="sub">${fmt(pct, 2)}%</span></td>`
-          + `<td class="${alt} ${dirClass(price, prev?.c)}">${fmt(price, dg)}`
-          + `<span class="sub">${chgPct == null ? '&nbsp;' : signed(chgPct, 2) + '%'}</span></td>`;
-      });
+      lookups.forEach((lk, i) => { row += cellsHtml(lk, date, i % 2 ? 'alt' : ''); });
       return row + '</tr>';
     }).join('');
 
     syncHeaderHeight();
+  }
+
+  // ---------- 列印：把很闊的表格分成每 6 隻一組 ----------
+  const PRINT_PER_BLOCK = 6;
+  function buildPrint() {
+    const stocks = state.stocks;
+    const dates = tableDates(stocks);
+    let html = `<header class="print-head"><h1>港股每日紀錄</h1><p>${escapeHtml($('#updated').textContent)}</p></header>`;
+    if (!stocks.length || !dates.length) {
+      html += '<p>尚未有資料。</p>';
+    }
+    for (let i = 0; stocks.length && dates.length && i < stocks.length; i += PRINT_PER_BLOCK) {
+      const group = stocks.slice(i, i + PRINT_PER_BLOCK);
+      const lookups = group.map(makeLookup);
+      let h1 = '<tr><th class="date-col" rowspan="2">日期</th>';
+      let h2 = '<tr>';
+      group.forEach((s) => {
+        h1 += `<th colspan="4" class="g">${escapeHtml(displayName(s))} <span class="code">${shortCode(s.symbol)}</span></th>`;
+        h2 += '<th class="g">最高</th><th>最低</th><th>波幅</th><th>現價</th>';
+      });
+      const body = dates.map((date) => `<tr><td class="date-col">${fmtDateShort(date)}</td>`
+        + lookups.map((lk) => cellsHtml(lk, date, '')).join('') + '</tr>').join('');
+      html += `<table class="print-block"><thead>${h1}</tr>${h2}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+    $('#print-area').innerHTML = html;
   }
 
   function renderUpdated() {
@@ -799,6 +828,22 @@
     }).join('') : '<p class="mg-empty">尚未有變動紀錄。</p>';
   }
 
+  // 輸入時預覽將會加入的股票（兩個新增框共用）
+  function addPreview(text) {
+    const { items, invalid } = parseAddInput(text);
+    if (invalid.length) return { text: `無法辨認：${invalid.join('、')}`, err: true };
+    if (!items.length) return { text: '', err: false };
+    const haveNames = Object.keys(state.names).length > 0;
+    const unknown = haveNames ? items.filter((i) => !hkName(i.symbol)).map((i) => shortCode(i.symbol)) : [];
+    const nameOf = (i) => (hasCJK(i.name) ? i.name : (hkName(i.symbol) || i.name || ''));
+    const shown = items.slice(0, 10).map((i) => `${shortCode(i.symbol)} ${nameOf(i)}`.trim()).join('、');
+    return {
+      text: `將會加入 ${items.length} 隻：${shown}${items.length > 10 ? '…' : ''}`
+        + (unknown.length ? `\n港交所名單找不到：${unknown.join('、')}（請檢查代號）` : ''),
+      err: unknown.length > 0,
+    };
+  }
+
   function qaMsg(text, err) {
     $('#qa-msg').textContent = text || '';
     $('#qa-msg').className = err ? 'small err' : 'small';
@@ -840,13 +885,46 @@
 
     // 管理股票
     const dlgManage = $('#dlg-manage');
-    $('#btn-add').addEventListener('click', () => (canEdit() ? openManage('list', true) : needToken()));
+    // 「＋ 新增」：小型輸入框，加入後即關閉並跳到該股票
+    const dlgQuick = $('#dlg-quick');
+    const qkMsg = (text, err) => { $('#qk-msg').textContent = text || ''; $('#qk-msg').className = err ? 'small err' : 'small'; };
+    $('#btn-add').addEventListener('click', () => {
+      if (!canEdit()) { needToken(); return; }
+      $('#qk-input').value = '';
+      qkMsg('');
+      dlgQuick.showModal();
+      $('#qk-input').focus();
+    });
+    $('#qk-input').addEventListener('input', () => { const p = addPreview($('#qk-input').value); qkMsg(p.text, p.err); });
+    $('#qk-cancel').addEventListener('click', () => dlgQuick.close());
+    $('#form-quick').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const { items, invalid } = parseAddInput($('#qk-input').value);
+      if (invalid.length) { qkMsg(`無法辨認：${invalid.join('、')}`, true); return; }
+      if (!items.length) { qkMsg('請輸入股票代號，例如 700 或 1810', true); return; }
+      $('#qk-ok').disabled = true;
+      qkMsg('儲存中…');
+      const res = await addWithFeedback(items);
+      $('#qk-ok').disabled = false;
+      if (res?.added?.length) {
+        dlgQuick.close();
+        jumpTo(res.added[0].symbol);
+      } else {
+        qkMsg($('#toast-text').textContent || '加入失敗，請再試', true);
+      }
+    });
+
+    // 列印
+    $('#btn-print').addEventListener('click', () => window.print());
+    window.addEventListener('beforeprint', buildPrint);
+    window.addEventListener('afterprint', () => { $('#print-area').innerHTML = ''; });
+
+    // 任何對話框關閉時，把提示框移回頁面，避免隨對話框一同隱藏
+    document.querySelectorAll('dialog').forEach((d) => d.addEventListener('close', () => {
+      if (d.contains($('#toast'))) document.body.appendChild($('#toast'));
+    }));
     $('#btn-manage').addEventListener('click', () => openManage('list'));
     $('#mg-close').addEventListener('click', () => dlgManage.close());
-    dlgManage.addEventListener('close', () => {
-      // 提示框移回頁面，避免隨對話框隱藏
-      document.body.appendChild($('#toast'));
-    });
     $('#mg-tabs').addEventListener('click', (ev) => {
       const b = ev.target.closest('button[data-tab]');
       if (!b) return;
@@ -862,16 +940,7 @@
       $('#qa-toggle').textContent = bulk ? '單行' : '批量';
       (bulk ? $('#qa-bulk') : $('#qa-input')).focus();
     });
-    const preview = () => {
-      const { items, invalid } = parseAddInput(qaText());
-      if (invalid.length) { qaMsg(`無法辨認：${invalid.join('、')}`, true); return; }
-      if (!items.length) { qaMsg(''); return; }
-      const haveNames = Object.keys(state.names).length > 0;
-      const unknown = haveNames ? items.filter((i) => !hkName(i.symbol)).map((i) => shortCode(i.symbol)) : [];
-      const shown = items.slice(0, 10).map((i) => `${shortCode(i.symbol)} ${i.name || hkName(i.symbol)}`.trim()).join('、');
-      qaMsg(`將會加入 ${items.length} 隻：${shown}${items.length > 10 ? '…' : ''}`
-        + (unknown.length ? `\n港交所名單找不到：${unknown.join('、')}（請檢查代號）` : ''), unknown.length > 0);
-    };
+    const preview = () => { const p = addPreview(qaText()); qaMsg(p.text, p.err); };
     $('#qa-input').addEventListener('input', preview);
     $('#qa-bulk').addEventListener('input', preview);
     $('#form-quickadd').addEventListener('submit', async (ev) => {
