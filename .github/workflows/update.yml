@@ -1,0 +1,41 @@
+name: 更新股價
+
+on:
+  schedule:
+    # 港股交易時段（HKT 09:15–16:15 = UTC 01:15–08:15），週一至週五每小時
+    - cron: "15 1-8 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - run: python scripts/fetch_prices.py
+
+      - name: 提交資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/prices.json
+          if git diff --cached --quiet; then
+            echo "沒有變更"
+            exit 0
+          fi
+          git commit -m "更新股價 $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase
+          git push

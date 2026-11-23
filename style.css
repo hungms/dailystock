@@ -1,0 +1,177 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --line: #d8dee4;
+  --line-soft: #eef1f4;
+  --head: #f6f8fa;
+  --accent: #0969da;
+  --up: #1a7f37;   /* 港股慣例：綠升 */
+  --down: #cf222e; /* 紅跌 */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px 16px 12px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+h1 { font-size: 22px; margin: 0; }
+.meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.actions { display: flex; gap: 8px; }
+
+main { max-width: 1600px; margin: 0 auto; padding: 0 16px 40px; }
+
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  cursor: pointer;
+}
+button:hover { background: var(--head); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.08); }
+button.ghost { border-color: transparent; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid #d4a72c;
+  background: #fff8c5;
+  border-radius: 6px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+th, td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  text-align: right;
+}
+thead th { background: var(--head); border-bottom: 1px solid var(--line); font-weight: 600; }
+thead tr:first-child th { text-align: center; }
+thead tr:nth-child(2) th { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+/* 每隻股票之間的分隔線 */
+.grp-start { border-left: 1px solid var(--line); }
+
+.date-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+  text-align: left;
+  border-right: 1px solid var(--line);
+}
+thead .date-col { background: var(--head); z-index: 2; }
+
+tbody tr:hover td { background: #f6f8fa; }
+tbody tr.today td { font-weight: 600; }
+
+.stock-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stock-name {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.stock-name:hover { text-decoration: underline; background: none; }
+.stock-name.active { color: var(--fg); text-decoration: underline; }
+.code { color: var(--muted); font-weight: 400; font-size: 12px; }
+.remove {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+.remove:hover { color: var(--down); background: none; }
+
+.up { color: var(--up); }
+.down { color: var(--down); }
+.pct { color: var(--muted); font-size: 12px; }
+.empty { color: var(--muted); text-align: center; }
+
+.hint { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+
+#chart-panel {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px 16px;
+}
+.chart-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chart-head h2 { font-size: 17px; margin: 0; flex: 1; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 6px 6px 0; }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chart-box { position: relative; height: 380px; margin-top: 12px; }
+
+dialog {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  width: min(440px, calc(100vw - 32px));
+  background: #fff;
+  color: var(--fg);
+}
+dialog::backdrop { background: rgba(0,0,0,.25); }
+dialog h3 { margin: 0 0 12px; }
+dialog label { display: block; margin: 10px 0; font-weight: 500; }
+dialog input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 10px;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.small { font-size: 12px; color: var(--muted); }
+#add-msg { min-height: 1em; }
+#add-msg.err { color: var(--down); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+code { background: var(--head); padding: 1px 4px; border-radius: 4px; }
+
+@media (max-width: 600px) {
+  .chart-box { height: 300px; }
+  th, td { padding: 5px 8px; }
+}
