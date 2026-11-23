@@ -1,10 +1,6 @@
 {
   "stocks": [
     {
-      "symbol": "0700.HK",
-      "name": "騰訊控股"
-    },
-    {
       "symbol": "9988.HK",
       "name": "阿里巴巴"
     },
@@ -56,6 +52,13 @@
       "symbol": "0001.HK",
       "name": "",
       "price": null
+    },
+    {
+      "t": "2026-11-23T11:13:57Z",
+      "a": "remove",
+      "symbol": "0700.HK",
+      "name": "騰訊控股",
+      "price": 344
     }
   ]
 }
