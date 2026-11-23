@@ -1,19 +1,23 @@
 {
   "stocks": [
     {
-      "symbol": "0005.HK",
-      "name": "滙豐控股"
-    },
-    {
-      "symbol": "0006.HK",
-      "name": ""
-    },
-    {
       "symbol": "0001.HK",
       "name": ""
     },
     {
       "symbol": "0002.HK",
+      "name": ""
+    },
+    {
+      "symbol": "0003.HK",
+      "name": "香港中華煤氣"
+    },
+    {
+      "symbol": "0005.HK",
+      "name": "滙豐控股"
+    },
+    {
+      "symbol": "0006.HK",
       "name": ""
     }
   ],
@@ -73,6 +77,13 @@
       "symbol": "0002.HK",
       "name": "",
       "price": null
+    },
+    {
+      "t": "2026-11-23T11:26:00Z",
+      "a": "add",
+      "symbol": "0003.HK",
+      "name": "香港中華煤氣",
+      "price": 7.27
     }
   ]
 }
