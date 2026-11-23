@@ -43,7 +43,7 @@ body {
 h1 { font-size: 28px; margin: 0; white-space: nowrap; }
 .meta { color: var(--muted); font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .actions { display: flex; gap: 10px; align-items: center; flex: none; }
-.jump input { width: 230px; }
+.jump input { width: 200px; }
 
 button, input, textarea {
   font: inherit;
@@ -223,4 +223,86 @@ dialog.full[open] { display: flex; flex-direction: column; }
   .jump { flex: 1; }
   .jump input { width: 100%; }
   .actions { width: 100%; }
+}
+
+/* ---------- 管理股票 ---------- */
+.mg-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 14px; }
+.mg-panel[hidden] { display: none; }
+.quickadd { display: flex; gap: 10px; align-items: flex-start; }
+.quickadd input, .quickadd textarea { flex: 1; font-size: 22px; }
+.qa-buttons { display: flex; gap: 10px; }
+#qa-msg { min-height: 1.3em; margin: 6px 2px; }
+#qa-msg.err { color: var(--up); }
+.mg-toolbar { display: flex; gap: 12px; align-items: center; margin: 6px 0 10px; flex-wrap: wrap; }
+.mg-toolbar input[type="search"], #mg-filter { flex: 1; min-width: 200px; }
+.check { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; white-space: nowrap; }
+.check input, .mg-row input[type="checkbox"] { width: 26px; height: 26px; min-height: 0; margin: 0; accent-color: var(--accent); }
+button.danger { color: var(--up); border-color: var(--up); }
+button.danger:disabled { color: var(--muted); border-color: var(--line); }
+
+.mg-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-top: 2px solid var(--line);
+}
+.mg-row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+}
+#mg-list .mg-row { grid-template-columns: 44px 90px minmax(0, 1fr) 140px 170px 110px; }
+#log-list .mg-row { grid-template-columns: 220px 84px 90px minmax(0, 1fr) 140px 150px 150px; }
+.mg-row.sel { background: #fff4f4; }
+.mg-row .code { font-size: 20px; color: var(--muted); }
+.mg-row .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-row .nm button { border: 0; padding: 0; min-height: 44px; background: none; color: var(--accent); font-weight: 600; font-size: 22px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.mg-row .num { text-align: right; }
+.mg-row .when { color: var(--muted); font-size: 18px; }
+.mg-row .when-r { color: var(--muted); font-size: 18px; text-align: right; }
+.mg-row .sub2 { display: block; font-size: 15px; color: var(--muted); }
+.mg-row button.rm { color: var(--up); }
+.mg-empty { padding: 30px 4px; color: var(--muted); }
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+}
+.badge-add { background: #ffebe9; color: var(--up); }
+.badge-remove { background: #ddf4ff; color: var(--down); }
+
+/* ---------- 復原提示 ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 20px;
+  background: #24292f;
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+  font-size: 20px;
+}
+.toast[hidden] { display: none; }
+.toast button { background: #fff; color: #24292f; border-color: #fff; font-weight: 600; }
+
+@media (max-width: 900px) {
+  #mg-list .mg-row { grid-template-columns: 40px 76px minmax(0, 1fr) 120px 100px; }
+  #mg-list .mg-row .when { display: none; }
+  #log-list .mg-row { grid-template-columns: 150px 70px 76px minmax(0, 1fr) 120px; }
+  #log-list .mg-row .hide-narrow { display: none; }
 }

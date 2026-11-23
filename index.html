@@ -19,6 +19,7 @@
         <datalist id="jump-list"></datalist>
       </form>
       <button id="btn-add" class="primary">＋ 新增</button>
+      <button id="btn-manage">管理／紀錄</button>
       <button id="btn-settings">設定</button>
     </div>
   </header>
@@ -45,20 +46,51 @@
     <div class="chart-box"><canvas id="chart"></canvas></div>
   </dialog>
 
-  <dialog id="dlg-add">
-    <form method="dialog" id="form-add">
-      <h3>新增股票</h3>
-      <label>股票代號（可一次輸入多隻）
-        <textarea id="add-input" rows="6" placeholder="例如：&#10;700, 9988, 5&#10;1810 小米集團&#10;0388.HK 香港交易所"></textarea>
-      </label>
-      <p class="small">以逗號、空格或換行分隔；每行可在代號後加上名稱。</p>
-      <p class="small" id="add-msg"></p>
-      <div class="dlg-actions">
-        <button value="cancel" formnovalidate>取消</button>
-        <button value="ok" class="primary" id="add-ok">新增</button>
+  <dialog id="dlg-manage" class="full">
+    <div class="chart-head">
+      <h2>管理股票</h2>
+      <div class="seg" id="mg-tabs">
+        <button data-tab="list" class="on">關注列表 <span id="mg-count"></span></button>
+        <button data-tab="log">變動紀錄</button>
       </div>
-    </form>
+      <button id="mg-close" class="close" aria-label="關閉">✕</button>
+    </div>
+
+    <section class="mg-panel" id="mg-panel-list">
+      <form id="form-quickadd" class="quickadd" autocomplete="off">
+        <input id="qa-input" placeholder="輸入代號加入，例如 700 或 1810 小米集團" enterkeyhint="done">
+        <textarea id="qa-bulk" rows="5" hidden placeholder="每行或以逗號分隔多隻：&#10;700, 9988, 5&#10;1810 小米集團&#10;0388.HK 香港交易所"></textarea>
+        <div class="qa-buttons">
+          <button type="button" id="qa-toggle">批量</button>
+          <button type="submit" class="primary" id="qa-ok">加入</button>
+        </div>
+      </form>
+      <p class="small" id="qa-msg"></p>
+      <div class="mg-toolbar">
+        <input id="mg-filter" placeholder="篩選列表" autocomplete="off">
+        <label class="check"><input type="checkbox" id="mg-all"> 全選</label>
+        <button id="mg-remove-sel" class="danger" disabled>移除所選</button>
+      </div>
+      <div class="mg-list" id="mg-list"></div>
+    </section>
+
+    <section class="mg-panel" id="mg-panel-log" hidden>
+      <div class="mg-toolbar">
+        <div class="seg" id="log-filter">
+          <button data-f="all" class="on">全部</button>
+          <button data-f="add">新增</button>
+          <button data-f="remove">移除</button>
+        </div>
+        <span class="small" id="log-summary"></span>
+      </div>
+      <div class="mg-list" id="log-list"></div>
+    </section>
   </dialog>
+
+  <div id="toast" class="toast" hidden>
+    <span id="toast-text"></span>
+    <button id="toast-undo" hidden>復原</button>
+  </div>
 
   <dialog id="dlg-settings">
     <form method="dialog" id="form-settings">
